@@ -1,0 +1,590 @@
+---
+title: ' Manual v.s Auto classification of blood samples.'
+author: 'Author: Amit yaron and Naor Bauman'
+date: "Date :February-2022"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r,echo = FALSE,message = FALSE,warning = FALSE}
+
+library(plotly)
+library(car)
+library(ggpubr)
+library(TOSTER)
+library(readxl)
+library(esc)
+library(effsize)
+library(tidyverse)
+library(ggplot2)
+library(plotGMM)
+library(plotmm)
+library(mixtools)
+library(dplyr)
+library(boot)
+library(writexl)
+library(stringr)
+library(kableExtra)
+library(gridExtra)
+library(mppa)
+
+```
+
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE}
+
+#"Confidence interval t-test function"
+CI_t <- function (x, ci = 0.95)
+{
+`%>%` <- magrittr::`%>%`
+Margin_Error <- qt(ci + (1 - ci)/2, df = length(x) - 1) * sd(x)/sqrt(length(x))
+df_out <- data.frame( sample_size=length(x), Mean=mean(x), sd=sd(x),max=max(x),min=min(x),
+Margin_Error=Margin_Error,
+'CI lower limit'=(mean(x) - Margin_Error),
+'CI Upper limit'=(mean(x) + Margin_Error)) %>%
+tidyr::pivot_longer(names_to = "Measurements", values_to ="values", 1:8 )
+return(df_out)
+}
+```
+
+
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE,include=FALSE}
+#Without Day 5 
+FMC63<-read_excel("TOST data.xlsx",sheet=1)
+
+
+```
+### Description of the data:
+
+The data contains classifications of blood samples, performed by "Accellix" ("the company").
+There are 2 types of classifications, manual and automatic, both are done by the company instruments.
+The goal is to analyze the differences between the classification type in order to imporve the automatic classification.
+There are 4 blood samples, each one is classified several times (the replicates), both manually and automatically, and examined with respect to the blood markers, CD45+.
+
+CD45+(CD stands for cluster of differentiation) is a Protein tyrosine phosphatase, receptor type, C is also known as PTPRC is an enzyme that, in humans, is encoded by the PTPRC gene.
+
+The data is loaded from an Excel file, here are the main columns and their sedcription:
+
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE,fig.height=6,fig.width=9}
+
+dd<-c("Replicate Samples","Observation name","%Viable CD45+/CD45+ Singlet (Manual classification)","%Viable CD45+/CD45+ Singlet (Auto classification)")
+
+ddd<-c("Blood sample with repetition.","Name of the files with the observation form the sample.","Percentage of Viable CD45+/CD45+ Singlet from the traditional flow cytometry Manual classification by Biologist.","Percentage of Viable CD45+/CD45+ Singlet from the Automated flow cytometry Auto classification by Device.")
+ 
+dddd<-cbind(dd,ddd)
+
+colnames(dddd)=c("Columns of the excel file","Description of the data")
+
+dddd%>%
+  kbl() %>%
+  kable_styling()
+
+
+```
+
+
+## Summary of the statistical report
+##### The statistical report analyzes: %Viable CD45+/Singlet. 
+
+1. The dataset table.
+2. Variance plot - Manual Data vs Mean. 
+3. Scatter plot  - Manual Data vs Auto Data.
+4. Outlier removal.
+5. Density and QQplot for each group.
+6. Multiple comparisons for hypotheses testing - introduction and applications.
+7. Multiple comparisons for hypotheses testing - conclusions.
+8. Simultaneous confidence intervals using Bonferroni correction - introduction and application.
+9. Simultaneous confidence intervals using Bonferroni correction - conclusions.
+10. Conclusions.
+
+## Statistical Equivalence Analysis of " %Viable CD45+/Singlet"  
+#### **Data Table of %Viable CD45+/Singlet:**
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE,fig.height=6,fig.width=9}
+
+data=cbind(FMC63[,11],FMC63[,4],round(as.numeric( unlist( FMC63[,6])),4),round(as.numeric( unlist( FMC63[,20])),4))
+data=data[-c(1,2),]
+data=na.omit(data)
+colnames(data)=c("Replicate Samples","Samples Name","%Viable CD45+/CD45+ Singlet Manual", "%Viable CD45+/CD45+ Singlet Auto")
+rownames(data)=c(1:nrow(data))
+data=as.data.frame(data)
+dataCopy = data
+
+fig <- plot_ly(
+  columnorder = c(1,2,3,4),
+  columnwidth = c(500,2000,500,500),
+  type = 'table',
+  header = list(
+    values = c('<b>Replicate Samples</b>', '<b> Observation Name</b>','<b>%Viable CD45+/Singlet Manual</b>','<b>%Viable CD45+/Singlet Auto</b>'),
+    line = list(color = '#506784'),
+    fill = list(color = '#119DFF'),
+    align = c('left','center'),
+    font = list(color = 'white', size = 12)
+  ),
+  cells = list(
+    values = rbind(data$`Replicate Samples`,data$`Samples Name`,data$`%Viable CD45+/CD45+ Singlet Manual`,data$`%Viable CD45+/CD45+ Singlet Auto`),
+    line = list(color = '#506784'),
+    fill = list(color = c('#25FEFD', 'white')),
+    align = c('left', 'center'),
+    font = list(color = c('#506784'), size = 12)
+    ))
+
+fig
+
+
+
+```
+
+
+#### **Variance plot of  %Viable CD45+/Singlet**
+```{r,echo = FALSE,message = FALSE,warning = FALSE,fig.height=6,fig.width=10}
+#plot the variance of the sub-sampels 
+subsampels<-data[,1]
+m<-c()
+for (v in subsampels) {
+m=c(m,round(mean(filter(data,data[,1]==v)[,3]),3))  
+}
+temp=cbind(data[,1],data[,3],m)
+
+colnames(temp)=c("Replicate Samples","Samples","Mean")
+
+temp=as.data.frame(temp)
+
+fig1 <- plot_ly(data = temp, x = ~as.numeric( temp$Mean), y = ~as.numeric( temp$Samples),color = ~as.character(temp$`Replicate Samples`) )
+fig1 <- fig1 %>% layout(title="Manual classification  vs Mean",xaxis = list(title = 'Mean  '),
+         yaxis = list(title = 'Manual classification '),legend = list(x =8, y = 1))
+
+fig1
+
+
+ma<-c()
+
+for (v in subsampels) {
+ma=c(ma,round(mean(filter(data,data[,1]==v)[,4]),3))  
+}
+tempa=cbind(data[,1],data[,4],m)
+
+tempa=as.data.frame(tempa)
+
+colnames(tempa)=c("Replicate Samples","Samples","Mean")
+
+fig2 <- plot_ly(data = tempa, x = ~as.numeric( tempa$Mean), y = ~as.numeric( tempa$Samples),color = ~as.character(tempa$`Replicate Samples`) )
+fig2 <- fig2 %>% layout(title="Auto classification  vs Mean",xaxis = list(title = 'Mean  '),
+         yaxis = list(title = 'Auto classification '),legend = list(x =8, y = 1))
+
+fig2
+
+
+
+```
+The Variance plots help has to understand the Scattering from the mean of each classification and assist in finding suspected outliers.
+
+ **Suspected outliers form the plot:**
+
+Variance plot Manual data v.s Mean:
+
+ * On sample CD19 CAR Linearity, observation number one with manual value of 78.1 is a suspected outlier.
+ 
+
+#### **Manual classification vs Auto classification for "  %Viable CD45+/Singlet":**
+```{r , echo = FALSE,message = FALSE,warning = FALSE}
+
+v=as.numeric(abs( data$`%Viable CD45+/CD45+ Singlet Manual`- data$`%Viable CD45+/CD45+ Singlet Auto` ))
+v = ifelse(v>=5.43,"Suspected outlier","No outlier")
+temp1<-data.frame(as.numeric( data$`%Viable CD45+/CD45+ Singlet Manual`) ,as.numeric(data$`%Viable CD45+/CD45+ Singlet Auto` ),v)
+
+colnames(temp1)<-c("Manual Data","Auto Data","Suspected outliers.")
+
+temp1<-na.omit(temp1)
+
+
+fit <- lm(temp1$`Auto Data` ~ temp1$`Manual Data`, data = temp1)
+
+
+fig3 <-plot_ly( temp1 ,x = ~temp1$`Manual Data`, y=~temp1$`Auto Data`, type = 'scatter', mode = 'markers',color = temp1$`Suspected outliers.`)%>%
+  add_lines(x = ~temp1$`Manual Data`, y = fitted(fit),color="red",name = paste0("y=",round( fit$coefficients[1],2),"+",round( fit$coefficients[2],2),"x")) %>% 
+  layout(title = 'Manual classification VS Auto classification',yaxis = list(title = "Auto classification"),xaxis = list(title = "Manual classification"))
+  
+fig3 
+
+
+```
+The scatter plot "Manual classification v.s Auto-classification" presents high correlation(0.687).
+
+##### **Outlier:**
+
+Based on the analysis above, we will mark the next observation as an outlier and remove it.
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE,fig.width=9,fig.height=3}
+rownames(data)=c(1:nrow(data))
+outlier<-filter(data,as.numeric(abs(data$`%Viable CD45+/CD45+ Singlet Manual` - data$`%Viable CD45+/CD45+ Singlet Auto`) )>6)
+outlier<-as.data.frame(outlier)
+outlier=rbind(outlier,data[1,])
+#outlier=rbind(outlier,data[21,])
+#outlier=rbind(outlier,data[15,])
+#outlier=rbind(outlier,data[5,])
+outlier=cbind(outlier,round( abs( outlier$`%Viable CD45+/CD45+ Singlet Manual`-outlier$`%Viable CD45+/CD45+ Singlet Auto`),3))
+colnames(outlier)=c("Replicate Samples","Sampels Name","%Viable CD45+/CD45+ Singlet Manual","%Viable CD45+/CD45+ Singlet Auto","Diffrence")
+
+
+
+fig1 <- plot_ly(
+  columnorder = c(1,2,3,4,5),
+  columnwidth = c(500,2000,800,800,500),
+  type = 'table',
+  header = list(
+    values = c('<b>Replicate Samples</b>', '<b>Sampels Name</b>','<b>%Viable CD45+/CD45+ Singlet Manual</b>','<b>%Viable CD45+/CD45+ Singlet Auto</b>','<b>Diffrence</b>'),
+    line = list(color = '#506784'),
+    fill = list(color = '#119DFF'),
+    align = c('left','center'),
+    font = list(color = 'white', size = 12)
+  ),
+  cells = list(
+    values = rbind(outlier$`Replicate Samples`,outlier$`Sampels Name`,outlier$`%Viable CD45+/CD45+ Singlet Manual`,outlier$`%Viable CD45+/CD45+ Singlet Auto`,outlier$Diffrence),
+    line = list(color = '#506784'),
+    fill = list(color = c('#25FEFD', 'white')),
+    align = c('left', 'center'),
+    font = list(color = c('#506784'), size = 12)
+    ))
+fig1
+
+
+
+```
+
+
+#### Density of each group
+
+```{r , echo = FALSE,message = FALSE,warning = FALSE,fig.width=7}
+subsampels<- data[,1]
+subsampels<-unique(subsampels)
+subsampels<-na.omit(subsampels)
+
+data=data[-c(1),]
+
+# for (v in subsampels) {
+# 
+#   temp=filter(data,data$`Replicate Samples`==v)
+#   plot(density(temp$`%Viable CD45+/CD45+ Singlet Manual`),main = v)
+# 
+# }
+
+temp=filter(data,data$`Replicate Samples`=="CD19_CAR Linearity")
+
+p=ggplot(temp, aes(sample=temp$`%Viable CD45+/CD45+ Singlet Manual`))+stat_qq()+geom_qq_line()+labs(
+    title = "QQ Plot of  CD19_CAR Linearity",
+    x = "Theoreticles",
+    y = "Norm Samples"
+  )
+
+pd=ggplot(temp,aes(x=temp$`%Viable CD45+/CD45+ Singlet Manual`))+ geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8)+xlim(87,96)+labs(
+    title = "Density of  CD19_CAR Linearity",
+    x = "CD19_CAR Linearity",
+    y = "Density"
+)
+
+grid.arrange(pd, p, ncol=2)
+
+#--------------------------------------------------------------------------
+
+temp=filter(data,data$`Replicate Samples`=="CD3 Linearity")
+
+p=ggplot(temp, aes(sample=temp$`%Viable CD45+/CD45+ Singlet Manual`))+stat_qq()+geom_qq_line()+labs(
+    title = "QQ Plot of  CD3 Linearity",
+    x = "Theoreticles",
+    y = "Norm Samples"
+  )
+
+pd=ggplot(temp,aes(x=temp$`%Viable CD45+/CD45+ Singlet Manual`))+ geom_density(fill="#E69F00", color="#E69F00", alpha=0.8)+xlim(90.18,92)+labs(
+    title = "Density of  CD3 Linearity",
+    x = "CD3 Linearity",
+    y = "Density"
+)
+
+grid.arrange(pd, p, ncol=2)
+
+#----------------------------------------------------------------------------------------
+
+temp=filter(data,data$`Replicate Samples`=="Cryopreserved lot B  (day of analysis #2) LNB-015-092")
+
+p=ggplot(temp, aes(sample=temp$`%Viable CD45+/CD45+ Singlet Manual`))+stat_qq()+geom_qq_line()+labs(
+    title = "QQ Plot of  Cryopreserved lot B  (day of analysis #2) LNB-015-092",
+    x = "Theoreticles",
+    y = "Norm Samples"
+  )
+
+pd=ggplot(temp,aes(x=temp$`%Viable CD45+/CD45+ Singlet Manual`))+ geom_density(fill="#FF6666", color="#FF6666", alpha=0.8)+xlim(84,93)+labs(
+    title = "Density of  Cryopreserved lot B  (day of analysis #2) LNB-015-09",
+    x = "Cryopreserved lot B  (day of analysis #2) LNB-015-092",
+    y = "Density"
+)
+
+grid.arrange(pd, p, ncol=2)
+
+#--------------------------------------------------------------------------------------------------------------------
+
+temp=filter(data,data$`Replicate Samples`=="Run #10 (cryopreserved day 6)")
+
+p=ggplot(temp, aes(sample=temp$`%Viable CD45+/CD45+ Singlet Manual`))+stat_qq()+geom_qq_line()+labs(
+    title = "QQ Plot of  Run #10 (cryopreserved day 6)",
+    x = "Theoreticles",
+    y = "Norm Samples"
+  )
+
+pd=ggplot(temp,aes(x=temp$`%Viable CD45+/CD45+ Singlet Manual`))+ geom_density(fill="#56B4E9", color="#56B4E9", alpha=0.8)+xlim(84,100)+labs(
+    title = "Density of  Run #10 (cryopreserved day 6)",
+    x = "Run #10 (cryopreserved day 6)",
+    y = "Density"
+)
+
+grid.arrange(pd, p, ncol=2)
+
+```
+
+Our inference is using t-statistics, which require 1 of the following conditions:
+
+1. Large scale dataset (justified by CLT).
+2. The dataset is sampled from a normal distribution.
+
+From the density plots above we can see that the groups are approximately normally distributed, consists of independent classifications, thus it is reasonable to assume that our data is sampled from a normal distribution.
+
+
+## Multiple comparisons for hypotheses testing
+
+Sometimes, we would like to test our hypothesis on multiple coordinates, where each coordinate has its own meaning. For example we can look at
+$$
+H_0:\mu=\mu_0\in\mathbb{R}^m
+$$
+as $m$ test, and our $H_0$ would be
+$$
+H_0:\cap_{i=1}^m \mu_{i}=\mu_{0,i}
+$$
+Where $\mu_i$ is the $i^{th}$ coordinate of the vector $\mu$, this hypothesis is also called the global null.
+Using our significance level $\alpha$ to test each hypothesis may lead to problems, because even though we have $\le\alpha$ doing a type I error in a single hypothesis, the chances could be much higher when we use the same $\alpha$ for all our partial hypotheses.
+For example, if we'll take $\alpha=0.05,m=10$ and our hypotheses are independent coordinates (and identically distributes, e.g. each one consists of flipping a fair coin several times) then by comparing each coordinate to $\alpha$ we have a chance of
+$$
+1-(1-0.05)^{10}\approx 0.4016
+$$
+to do a type I error, which is way too big, so a different approach is needed.
+
+As learned in class there are several procedures that were designed to address the multiple comparisons challenge. We will describe and implement the following (while mentioning and proving the simplest results):
+
++ Bonferroni correction
++ Holm method
++ Simes method
+
+Using the criterion FWER.
+
+Note: there is another famous criterion we learned about - FDR, but since FDR is about proportions and we do not have many partial hypotheses (4) we will not address this matter.
+
+Let $m$ be the number of hypotheses, $m_0$ the number of the hypotheses where $H_{0,j}$ is true, $R$ be the number of rejected hypotheses and $V$ the number of falsely rejected hypotheses. (note that $V$ and $m_0$ cannot be observed), Then:
+\begin{equation}
+    FWER=\mathbb{P}(V\ge 1)
+\end{equation}
+
+#### Code preparation
+The multiple comparisons procedures take a vector of p-values.
+We will generate 4 p-values for our 4 groups, based on a paired t-tests where the null hypothesis (for each group) is that the means difference (between auto and manual classification) is 0.
+
+We use the paired t-test since we cannot assume independence between the manual and the auto classifiers, in fact, we hope there is a strong positive correlation between the classifiers (assuming the manual classification is "correct").
+
+```{r}
+
+#Extracting the p-value for each sample base on a paired t-test.
+alpha = 0.05
+dataCopy = data
+colnames(dataCopy) <- c("sample", "classname", "manual", "auto")
+
+
+#filter by the unique value in the vector i = 1 default
+sample1 <- dataCopy %>% filter(sample == levels(factor(sample))[1])
+sample2 <- dataCopy %>% filter(sample == levels(factor(sample))[2])
+sample3 <- dataCopy %>% filter(sample == levels(factor(sample))[3])
+sample4 <- dataCopy %>% filter(sample == levels(factor(sample))[4])
+
+meanDiffSample1 = sample1$manual - sample1$auto
+meanDiffSample2 = sample2$manual - sample2$auto
+meanDiffSample3 = sample3$manual - sample3$auto
+meanDiffSample4 = sample4$manual - sample4$auto
+
+t1 = t.test(meanDiffSample1,conf.level = 1 - alpha)
+t2 = t.test(meanDiffSample2,conf.level = 1 - alpha)
+t3 = t.test(meanDiffSample3,conf.level = 1 - alpha)
+t4 = t.test(meanDiffSample4,conf.level = 1 - alpha)
+
+p = c(t1$p.value,t2$p.value,t3$p.value,t4$p.value)
+
+```
+
+#### Bonferroni correction:
+The procedure is as follows:
+Given $m$ hypotheses and significance level $\alpha$, test each one with significance level of $\frac{\alpha}{m}$.
+It is straight forward to show that the probability of falsely rejecting the global null is less than $\alpha$:
+$$
+\mathbb{P}_{H_0}(\cup_{j=1}^m p_j\le\frac{\alpha}{m})\le\sum_{j=1}^m \mathbb{P}_{H_0}(p_j\le\frac{\alpha}{m})\overset{p_j\overset{H_0}{\sim}U[0,1]}{=}\sum_{j=1}^m \frac{\alpha}{m}=\alpha
+$$
+There are 2 ways of controlling FWER, the strong version holds no matter which hypotheses are true, the weak version holds only under the global null.
+Bonferroni correction controls FWER in the strong sense and the proof is short:
+Let $v_j$ be the indicator of $H_{0,j}$, i.e. it equals $1$ if the hypothesis is rejected and $0$ otherwise, thus
+$$
+V=\sum_{j\in H_0} v_j
+$$
+hence
+$$
+\mathbb{E}[V]=\sum_{j\in H_0} \mathbb{E}[v_j]=\sum_{j\in H_0}\mathbb{P}(v_j=1)=\sum_{j\in H_0}\mathbb{P}(v_j\le\frac{\alpha}{m})\overset{p_j\overset{H_0}{\sim}U[0,1]}{=}m_0\frac{\alpha}{m}\le\alpha
+$$
+Now, since $V$ is a non-negative random variable, we have 
+$$
+FWER=\mathbb{P}(V\ge 1)\le\sum_{j=1}^m \mathbb{P}(V\ge m)=\mathbb{E}[V]\le\alpha
+$$
+```{r}
+
+bonferroni_sig <- p.adjust(p, "bonferroni") < alpha
+bonferroni_sig
+```
+The procedure do not reject the null hypothesis for groups 1 and 2.
+
+It does reject the null hypothesis for for groups 3 and 4.
+
+As wee see below, Bonferroni is the most conservative when rejecting hypotheses. 
+
+#### Holm:
+The algorithm goes as follows:
+
++ Sort the p-values $p_{(1)}\le\cdots\le p_{(m)}$
++ Denote the hypotheses accordingly $H_{0,(1)},\cdots,H_{0,(m)}$
++ For $i$ in $1$ to $m$:
+     If $p_{(i)}\le\frac{\alpha}{m+1-i}$ reject $H_{0,(i)}$ and continue to the next iteration, otherwise:
+     Reject $H_{0,(i)},\cdots,H_{0,(m)}$ and break the loop.
+
+It is easy to show that Holm's procedure controls FWER in the strong sense:
+
+Let $H_0$ be the set of indexes of the true $H_{0,j}$ hypotheses.
+
+And let $j_0=\min(H_0)$ which corresponds to the smallest hypothesis we can reject falsely.
+
+Since there are at most $m-m_0$ hypotheses in $H_0^c$ we can deduce that $j_0\le m-m_0+1$.
+
+We will do a type I error only 
+$$
+p_{(j_0)}\le\frac{\alpha}{m-j_0+1}\le\frac{\alpha}{m_0}
+$$
+Thus
+$$
+\mathbb{P}(\min_{j\in H_0}\le\frac{\alpha}{m_0})\overset{union\;bound}{\le}\sum_{j\in H_0} p_j\le\frac{\alpha}{m_0}\overset{p_j\overset{H_0}{\sim}U[0,1]}{=}m_0\frac{\alpha}{m_0}=\alpha
+$$
+
+```{r}
+
+holm_sig <- p.adjust(p, "holm") < alpha
+holm_sig
+
+```
+The procedure do not rejects the null hypothesis for group 1 but do reject for the rest.
+
+As can be seen, though Bonferroni and Holm both controls FWER in the strong sense, Bonferroni is indeed more conservative in rejecting hypotheses.
+
+#### Simes:
+The algorithm goes as follows:
+
++ Sort the p-values $p_{(1)}\le\cdots\le p_{(m)}$
++ Denote $T_m=\min_{j}(p_{(j)}\frac{m}{j})$
++ Reject the global null if $T_m\le\alpha$
+
+Then under $H_0$, $T_m\sim U[0,1]$ and assuming the p-values are independent, the procedure controls FWER (the proof is a bit long and was brougt in a dedicated file on Moodle).
+
+```{r}
+
+sorted_p = sort(p)
+T = c(4/1,4/2,4/3,4/4)
+T = sorted_p * T
+T_m = min(T) 
+T_m <= alpha
+```
+Simes method tells us whether we reject the global null.
+
+As might expected, once Bonferroni rejects half of the hypotheses, and Holm rejects 75% - the global null would be rejected.
+
+#### Multiple comparisons - conclusions
+
+As the most conservative procedure, Bonferroni correction rejects 50% of the hypotheses, Holm rejects 75% of them and Simes rejects the global null.
+
+The fact that Bonferroni and Holm did not rejected all the hypotheses indicates that our auto classifier might be in the right way and is probably better than a random classifier.
+
+The fact that the majority is rejected by Holm + the global null is rejected,  indicates that the classifier should be further trained.
+
+Important note - indeed, our classifier didn't do a great job here, however, our criterion - $H_0:\Delta=0$ is very demanding, hence, a look at simultaneous confidence intervals might be insightful. 
+
+## Simultaneous confidence intervals using Bonferroni correction
+
+A t-test confidence interval is of the form:
+$$
+CI^\alpha=[\bar{x}-t_{n-1,1-\frac{\alpha}{2}}\cdot\frac{S}{\sqrt{n}},\bar{x}+t_{n-1,1-\frac{\alpha}{2}}\cdot\frac{S}{\sqrt{n}}]
+$$
+Where $\alpha$ is our chosen significance level and $S^2=\frac{1}{n-1}\sum_{i=1}^n(x_i-\bar{x})^2$.
+However, as in hypotheses testing, this approach can fail when we have multiple comparisons.
+For example, let $T_j\sim N(\theta_j,1)$ independent and we construct $CI_j^\alpha=[T_j-Z_{1-\frac{\alpha}{2}},T_j+Z_{1-\frac{\alpha}{2}}]$ then
+$$
+\mathbb{P}_\theta(\cap_{j=1}^m\{\theta_j\in CI_j\})=\cap_{j=1}^m \mathbb{P}_{\theta_j}(\theta_j\in CI_j)=(1-\alpha)^m < 1-\alpha
+$$
+And we don't have the wanted confidence.
+So, as before, a different approach is required.
+
+Definition: A confidence region covers simultaneously $\theta=(\theta_1,...,\theta_m)$ with confidence level $1-\alpha$ if $\forall \theta\in\mathbb{R}^m$ we have $\mathbb{P}_\theta(\theta\in CI)\ge 1-\alpha$.
+We will implement on our data a simultaneous confidence interval method using Bonferroni correction, that is:
+$$
+CI_j^{\alpha Bon}=[\bar{x_j}-t_{n_j-1,1-\frac{\alpha}{2m}}\cdot\frac{S_j}{\sqrt{n_j}},\bar{x_j}+t_{n_j-1,1-\frac{\alpha}{2m}}\cdot\frac{S_j}{\sqrt{n_j}}]
+$$
+and
+$$
+CI^{\alpha Bon}=CI_1^{\alpha Bon}\times\cdots \times CI_m^{\alpha Bon}
+$$
+Where $x_j,n_j,S_j$ keep their usual meaning with respect to group $j$ (if each region is an interval, the the global region would be an $m$-dimensional box).
+
+From the above, we can conclude that given a significance level $\alpha$, the confidence interval for group $j$ would be $CI_j^{\alpha Bon}=CI^{\alpha/m}$.
+
+```{r}
+
+tb1 = t.test(meanDiffSample1, conf.level = 1 - alpha/4)
+CI1 = tb1$conf.int
+tb2 = t.test(meanDiffSample2, conf.level = 1 - alpha/4)
+CI2 = tb2$conf.int
+tb3 = t.test(meanDiffSample3, conf.level = 1 - alpha/4)
+CI3 = tb3$conf.int
+tb4 = t.test(meanDiffSample4, conf.level = 1 - alpha/4)
+CI4 = tb4$conf.int
+
+CI1
+CI2
+CI3
+CI4
+```
+
+#### Simultaneous confidence intervals - conclusions
+
+We have generated four $1-\alpha/4=0.9875$ confidence intervals for the classifiers mean differences.
+
+The first confidence interval is the smallest, this might indicate a smaller variance, however, we shouldn't rush into any conclusions since our first group is the biggest (about 2.5 times than group 2), and all of them are rather small.
+
+Notice that the CI's of groups 1 and 2 contain 0, while the others do not, in fact, the CI for group 4 is quite far from containing 0.
+
+Hence, we can deduce that the auto classifier did better on groups 1 and 2, and that we should recheck it on group 3 and 4 again, while having more observations.
+
+
+## Conclusions:
+
+The Auto classifier showed indications of success while performing multiple Hypotheses testing, at the same time - the results are not good enough - this might be explained by the strict criterion of $\Delta=0$.
+
+The simultaneous confidence intervals are indicating that our classifier is in the right direction though it requires more training.
+
+A good way to move forward is to add more observations, both to the existing groups and to new groups.
+
+This way, we could continue improving our classifier, our inference would be better (and less variable), in addition, more groups might allow us to use FDR controlling procedures and FCR-controlled simultaneous confidence intervals.
