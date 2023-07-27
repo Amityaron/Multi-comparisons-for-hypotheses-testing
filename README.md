@@ -36,11 +36,34 @@ It is straight forward to show that the probability of falsely rejecting the glo
 ```math
 \mathbb{P}_{H_0}(\cup_{j=1}^m p_j\le\frac{\alpha}{m})\le\sum_{j=1}^m \mathbb{P}_{H_0}(p_j\le\frac{\alpha}{m})\overset{p_j\overset{H_0}{\sim}U[0,1]}{=}\sum_{j=1}^m \frac{\alpha}{m}=\alpha
 ```
+#### Holm procedure:
+The algorithm goes as follows:
+
++ Sort the p-values $p_{(1)}\le\cdots\le p_{(m)}$
++ Denote the hypotheses accordingly $H_{0,(1)},\cdots,H_{0,(m)}$
++ For $i$ in $1$ to $m$:
+     If $p_{(i)}\le\frac{\alpha}{m+1-i}$ reject $H_{0,(i)}$ and continue to the next iteration, otherwise:
+     Reject $H_{0,(i)},\cdots,H_{0,(m)}$ and break the loop.
+
+#### Simes procedure:
+The algorithm goes as follows:
+
++ Sort the p-values $p_{(1)}\le\cdots\le p_{(m)}$
++ Denote $T_m=\min_{j}(p_{(j)}\frac{m}{j})$
++ Reject the global null if $T_m\le\alpha$
 
 
 
 
-Note: there is another famous criterion we learned about - FDR, but since FDR is about proportions and we do not have many partial hypotheses (4) we will not address this matter.
+## Simultaneous confidence intervals using Bonferroni correction
 
-Let $m$ be the number of hypotheses, $m_0$ the number of the hypotheses where $H_{0,j}$ is true, $R$ be the number of rejected hypotheses and $V$ the number of falsely rejected hypotheses. (note that $V$ and $m_0$ cannot be observed), Then:
-$$FWER=\mathbb{P}(V\ge 1)$$
+A t-test confidence interval is of the form:
+```math
+CI^\alpha=[\bar{x}-t_{n-1,1-\frac{\alpha}{2}}\cdot\frac{S}{\sqrt{n}},\bar{x}+t_{n-1,1-\frac{\alpha}{2}}\cdot\frac{S}{\sqrt{n}}]
+```
+The algorithm goes as follows:
+
++ Sort the p-values $p_{(1)}\le\cdots\le p_{(m)}$
++ Denote $T_m=\min_{j}(p_{(j)}\frac{m}{j})$
++ Reject the global null if $T_m\le\alpha$
+  
